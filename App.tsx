@@ -1,6 +1,6 @@
 
-import React, { useRef, useState } from 'react';
-import { GameState, WeaponType, ScrollType, Weapon, Scroll } from './types';
+import React, { useEffect, useRef, useState } from 'react';
+import { GameState, WeaponType, ScrollType, Weapon, Scroll, DroppedItem } from './types';
 import { WEAPONS, ADVANCEMENTS, SCROLL_DESCRIPTIONS } from './constants';
 import { Enemy, SCANTY_ENEMIES, HARDY_ENEMIES, MILORD, MANOR_HAJDUK, SPIRIT, LOCATION_OPTIONS, FORBIDDEN_UNDINE_WEAPONS } from './rules';
 
@@ -79,9 +79,14 @@ const App: React.FC = () => {
     description: string;
     choices: { label: string; action: () => void }[];
   } | null>(null);
+  const gameStateRef = useRef<GameState | null>(null);
   const rollCounter = useRef(1);
   const rollDelayMs = 650;
   const diceLogLimit = 1;
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
 
   // --- Dice + Action Timing ---
   const recordRoll = (sides: number[], results: number[], total?: number) => {
@@ -132,6 +137,46 @@ const App: React.FC = () => {
     if (gameState.visitedTypes.has(location)) return 'visited';
     if (gameState.escapedTypes.has(location)) return 'escaped';
     return 'unknown';
+  };
+
+  const addLocationItem = (state: GameState, location: string, item: DroppedItem) => {
+    const nextItems = { ...state.locationItems };
+    const itemsAtLocation = nextItems[location] ? [...nextItems[location]] : [];
+    itemsAtLocation.push(item);
+    nextItems[location] = itemsAtLocation;
+    state.locationItems = nextItems;
+  };
+
+  const removeLocationItem = (state: GameState, location: string, index: number) => {
+    const nextItems = { ...state.locationItems };
+    const itemsAtLocation = nextItems[location] ? [...nextItems[location]] : [];
+    const [removed] = itemsAtLocation.splice(index, 1);
+    if (itemsAtLocation.length > 0) {
+      nextItems[location] = itemsAtLocation;
+    } else {
+      delete nextItems[location];
+    }
+    state.locationItems = nextItems;
+    return removed;
+  };
+
+  const describeLocationItem = (item: DroppedItem) => {
+    switch (item.kind) {
+      case 'weapon':
+        return item.weapon.name;
+      case 'potion':
+        return "Herbal Potion";
+      case 'scroll':
+        return `Scroll: ${item.scroll.type}`;
+      case 'rope':
+        return "Rope";
+      case 'kaftan':
+        return "Leather Kaftan";
+      case 'invisibility-cap':
+        return `Invisibility Cap (${item.charges})`;
+      default:
+        return "Item";
+    }
   };
 
   const updateState = (updater: (prev: GameState) => GameState) => {
@@ -187,6 +232,108 @@ const App: React.FC = () => {
     });
   };
 
+  const tryTakeLocationItem = (state: GameState, item: DroppedItem, location: string) => {
+    switch (item.kind) {
+      case 'weapon': {
+        if (state.inventory.weapon.name === item.weapon.name) {
+          return { taken: false, message: `You already wield a ${item.weapon.name}.` };
+        }
+        const previousWeapon = state.inventory.weapon;
+        if (state.inventory.weapon.name !== WeaponType.BARE_HANDS) {
+          addLocationItem(state, location, {
+            kind: 'weapon',
+            weapon: state.inventory.weapon,
+            storedAtVisitId: state.locationVisitId
+          });
+        }
+        state.inventory.weapon = item.weapon;
+        return {
+          taken: true,
+          message: previousWeapon.name === WeaponType.BARE_HANDS
+            ? `You take ${item.weapon.name}.`
+            : `You switch to ${item.weapon.name}, leaving ${previousWeapon.name} here.`
+        };
+      }
+      case 'potion':
+        if (state.inventory.potions >= 10) {
+          return { taken: false, message: "Your potion pack is full." };
+        }
+        state.inventory.potions += 1;
+        return { taken: true, message: "You take a herbal potion." };
+      case 'scroll':
+        state.inventory.scrolls.push(item.scroll);
+        return { taken: true, message: `You take a ${item.scroll.type} scroll.` };
+      case 'rope':
+        if (state.inventory.hasRope) {
+          return { taken: false, message: "You already have a rope." };
+        }
+        state.inventory.hasRope = true;
+        return { taken: true, message: "You take the rope." };
+      case 'kaftan':
+        if (state.inventory.hasKaftan) {
+          return { taken: false, message: "You already have a leather kaftan." };
+        }
+        state.inventory.hasKaftan = true;
+        return { taken: true, message: "You take the leather kaftan." };
+      case 'invisibility-cap':
+        if (state.inventory.hasInvisibilityCap > 0) {
+          return { taken: false, message: "You already have an invisibility cap." };
+        }
+        state.inventory.hasInvisibilityCap = item.charges;
+        return { taken: true, message: `You take the invisibility cap (${item.charges}).` };
+      default:
+        return { taken: false, message: "You cannot take that." };
+    }
+  };
+
+  const attemptTakeLocationItem = (index: number) => {
+    if (!gameState) return;
+    const location = gameState.currentLocation;
+    updateState(s => {
+      const items = s.locationItems[location];
+      if (!items || !items[index]) return s;
+      const item = items[index];
+      const isReturnVisit = s.locationVisitId > item.storedAtVisitId;
+      if (isReturnVisit && rollD6() <= 2) {
+        removeLocationItem(s, location, index);
+        addLog("Someone already found it and took it.");
+        return s;
+      }
+      const result = tryTakeLocationItem(s, item, location);
+      if (result.taken) {
+        removeLocationItem(s, location, index);
+      }
+      addLog(result.message);
+      return s;
+    });
+  };
+
+  const dropItemHere = (item: DroppedItem, message: string, applyDrop: (state: GameState) => void) => {
+    if (!gameState) return;
+    updateState(s => {
+      applyDrop(s);
+      addLocationItem(s, s.currentLocation, item);
+      addLog(message);
+      return s;
+    });
+  };
+
+  const buyWeapon = (weaponType: WeaponType, price: number) => {
+    updateState(s => {
+      if (s.inventory.weapon.name !== weaponType && s.inventory.weapon.name !== WeaponType.BARE_HANDS) {
+        addLocationItem(s, s.currentLocation, {
+          kind: 'weapon',
+          weapon: s.inventory.weapon,
+          storedAtVisitId: s.locationVisitId
+        });
+      }
+      s.dutki -= price;
+      s.inventory.weapon = WEAPONS[weaponType];
+      return s;
+    });
+    addLog(`You bought a ${weaponType}.`);
+  };
+
   // --- Initial Game Setup ---
   const startGame = (name: string) => {
     const weaponRoll = rollD4();
@@ -238,6 +385,8 @@ const App: React.FC = () => {
       permanentHitBonus: 0,
       halfDamageEnemies: {},
       currentLocation: 'Mountain Pass',
+      locationVisitId: 1,
+      locationItems: {},
       inCave: false,
       caveHiddenPassageSeen: false,
       isDead: false,
@@ -322,7 +471,16 @@ const App: React.FC = () => {
       state.hp = 20;
     }
     if (aRoll === 4) state.points += 5;
-    if (aRoll === 5) state.inventory.weapon = WEAPONS[WeaponType.SCATTERGUN];
+    if (aRoll === 5) {
+      if (state.inventory.weapon.name !== WeaponType.BARE_HANDS) {
+        addLocationItem(state, state.currentLocation, {
+          kind: 'weapon',
+          weapon: state.inventory.weapon,
+          storedAtVisitId: state.locationVisitId
+        });
+      }
+      state.inventory.weapon = WEAPONS[WeaponType.SCATTERGUN];
+    }
   };
 
   const startAdvancementSequence = (count: number, onDone?: () => void) => {
@@ -334,9 +492,10 @@ const App: React.FC = () => {
         return;
       }
 
-      let currentRoll = 0;
+      const currentState = gameStateRef.current;
+      if (!currentState) return;
+      const currentRoll = rollNewAdvancement(currentState);
       updateState(s => {
-        currentRoll = rollNewAdvancement(s);
         if (currentRoll !== 6) {
           applyAdvancementEffects(s, currentRoll);
         }
@@ -654,11 +813,17 @@ const App: React.FC = () => {
     let lossReason = "";
 
     if (enemy.name === "Hajduk" && rollD6() <= 2) {
-      if (state.inventory.weapon.name !== WeaponType.KNIFE) {
+      const rewardWeapon = WEAPONS[WeaponType.KNIFE];
+      if (state.inventory.weapon.name === WeaponType.BARE_HANDS) {
         msg += "You found a Knife! ";
-        state.inventory.weapon = WEAPONS[WeaponType.KNIFE];
+        state.inventory.weapon = rewardWeapon;
       } else {
-        msg += "You found a Knife, but you already have one. ";
+        addLocationItem(state, locationType, {
+          kind: 'weapon',
+          weapon: rewardWeapon,
+          storedAtVisitId: state.locationVisitId
+        });
+        msg += "You found a Knife and left it here. ";
       }
     }
     if (enemy.name === "Bies" && rollD6() <= 2) {
@@ -670,7 +835,8 @@ const App: React.FC = () => {
         msg += "Found a Rope! ";
         state.inventory.hasRope = true;
       } else {
-        msg += "Found a Rope, but you already have one. ";
+        addLocationItem(state, locationType, { kind: 'rope', storedAtVisitId: state.locationVisitId });
+        msg += "Found a Rope and left it here. ";
       }
     }
     if (enemy.name === "Wolf" && rollD6() === 1) {
@@ -705,15 +871,33 @@ const App: React.FC = () => {
     if (enemy.name === MILORD.name) {
       const gold = rollDice([6, 6]).total;
       state.dutki += gold;
+      const hadWeapon = state.inventory.weapon.name !== WeaponType.BARE_HANDS;
+      if (hadWeapon) {
+        addLocationItem(state, locationType, {
+          kind: 'weapon',
+          weapon: state.inventory.weapon,
+          storedAtVisitId: state.locationVisitId
+        });
+      }
       state.inventory.weapon = WEAPONS[WeaponType.KARABELA];
       state.inventory.hasKarabela = true;
       state.milordDefeated = true;
       state.milordHunts = false;
-      msg += `You took ${gold} dutki and the Milord's karabela. `;
+      msg += `You took ${gold} dutki and the Milord's karabela${hadWeapon ? ", leaving your old weapon here" : ""}. `;
     }
     if (enemy.name === MANOR_HAJDUK.name && rollD6() <= 2) {
-      msg += "Found a Sabre! ";
-      state.inventory.weapon = WEAPONS[WeaponType.SABRE];
+      const rewardWeapon = WEAPONS[WeaponType.SABRE];
+      if (state.inventory.weapon.name === WeaponType.BARE_HANDS) {
+        msg += "Found a Sabre! ";
+        state.inventory.weapon = rewardWeapon;
+      } else {
+        addLocationItem(state, locationType, {
+          kind: 'weapon',
+          weapon: rewardWeapon,
+          storedAtVisitId: state.locationVisitId
+        });
+        msg += "Found a Sabre and left it here. ";
+      }
     }
     if (postCombatReward?.includes('pantry-one')) {
       const heal = rollD4();
@@ -942,7 +1126,7 @@ const App: React.FC = () => {
       effect = () => resolvePeakBlack();
     }
 
-    updateState(s => ({ ...s, currentLocation: loc, inCave: false }));
+    updateState(s => ({ ...s, currentLocation: loc, inCave: false, locationVisitId: s.locationVisitId + 1 }));
 
     const isRevisit = loc !== "Peak Black" && (gameState?.visitedTypes.has(loc) || gameState?.escapedTypes.has(loc));
     if (isRevisit) {
@@ -1128,29 +1312,33 @@ const App: React.FC = () => {
 
   const grantRandomObject = (state: GameState) => {
     const oRoll = rollD6();
+    const location = state.currentLocation;
     if (oRoll === 1) {
       const weaponRoll = rollD4();
       const startingWeapons = [WeaponType.KNIFE, WeaponType.CIUPAGA, WeaponType.SABRE, WeaponType.SAMOPAL];
       const newWeapon = WEAPONS[startingWeapons[weaponRoll - 1]];
-      if (state.inventory.weapon.name !== newWeapon.name) {
+      if (state.inventory.weapon.name === WeaponType.BARE_HANDS) {
         state.inventory.weapon = newWeapon;
         return newWeapon.name;
       }
-      return `${newWeapon.name} (already have one)`;
+      addLocationItem(state, location, { kind: 'weapon', weapon: newWeapon, storedAtVisitId: state.locationVisitId });
+      return `${newWeapon.name} (left here)`;
     }
     if (oRoll === 2) {
       if (state.inventory.potions < 10) {
         state.inventory.potions++;
         return "Herbal Potion";
       }
-      return "Herbal Potion (pack is full)";
+      addLocationItem(state, location, { kind: 'potion', storedAtVisitId: state.locationVisitId });
+      return "Herbal Potion (left here)";
     }
     if (oRoll === 3) {
       if (!state.inventory.hasRope) {
         state.inventory.hasRope = true;
         return "Rope";
       }
-      return "Rope (already have one)";
+      addLocationItem(state, location, { kind: 'rope', storedAtVisitId: state.locationVisitId });
+      return "Rope (left here)";
     }
     if (oRoll === 4) {
       state.inventory.scrolls.push(createRandomScroll());
@@ -1161,14 +1349,17 @@ const App: React.FC = () => {
         state.inventory.hasKaftan = true;
         return "Leather Kaftan";
       }
-      return "Leather Kaftan (already have one)";
+      addLocationItem(state, location, { kind: 'kaftan', storedAtVisitId: state.locationVisitId });
+      return "Leather Kaftan (left here)";
     }
     if (oRoll === 6) {
+      const capCharges = rollD4();
       if (state.inventory.hasInvisibilityCap === 0) {
-        state.inventory.hasInvisibilityCap = rollD4();
+        state.inventory.hasInvisibilityCap = capCharges;
         return "Invisibility Cap";
       }
-      return "Invisibility Cap (already have one)";
+      addLocationItem(state, location, { kind: 'invisibility-cap', charges: capCharges, storedAtVisitId: state.locationVisitId });
+      return `Invisibility Cap (${capCharges}) (left here)`;
     }
     return "Object";
   };
@@ -1181,11 +1372,12 @@ const App: React.FC = () => {
         const weaponRoll = rollD4();
         const startingWeapons = [WeaponType.KNIFE, WeaponType.CIUPAGA, WeaponType.SABRE, WeaponType.SAMOPAL];
         const newWeapon = WEAPONS[startingWeapons[weaponRoll - 1]];
-        if (s.inventory.weapon.name !== newWeapon.name) {
+        if (s.inventory.weapon.name === WeaponType.BARE_HANDS) {
           s.inventory.weapon = newWeapon;
           item = newWeapon.name;
         } else {
-          item = `${newWeapon.name} (already have one)`;
+          addLocationItem(s, s.currentLocation, { kind: 'weapon', weapon: newWeapon, storedAtVisitId: s.locationVisitId });
+          item = `${newWeapon.name} (left here)`;
         }
       }
       if (oRoll === 2) {
@@ -1193,7 +1385,8 @@ const App: React.FC = () => {
           s.inventory.potions++;
           item = "Herbal Potion";
         } else {
-          item = "Herbal Potion (pack is full)";
+          addLocationItem(s, s.currentLocation, { kind: 'potion', storedAtVisitId: s.locationVisitId });
+          item = "Herbal Potion (left here)";
         }
       }
       if (oRoll === 3) {
@@ -1201,7 +1394,8 @@ const App: React.FC = () => {
           s.inventory.hasRope = true;
           item = "Rope";
         } else {
-          item = "Rope (already have one)";
+          addLocationItem(s, s.currentLocation, { kind: 'rope', storedAtVisitId: s.locationVisitId });
+          item = "Rope (left here)";
         }
       }
       if (oRoll === 4) {
@@ -1213,15 +1407,18 @@ const App: React.FC = () => {
           s.inventory.hasKaftan = true;
           item = "Leather Kaftan";
         } else {
-          item = "Leather Kaftan (already have one)";
+          addLocationItem(s, s.currentLocation, { kind: 'kaftan', storedAtVisitId: s.locationVisitId });
+          item = "Leather Kaftan (left here)";
         }
       }
       if (oRoll === 6) {
+        const capCharges = rollD4();
         if (s.inventory.hasInvisibilityCap === 0) {
-          s.inventory.hasInvisibilityCap = rollD4();
+          s.inventory.hasInvisibilityCap = capCharges;
           item = "Invisibility Cap";
         } else {
-          item = "Invisibility Cap (already have one)";
+          addLocationItem(s, s.currentLocation, { kind: 'invisibility-cap', charges: capCharges, storedAtVisitId: s.locationVisitId });
+          item = `Invisibility Cap (${capCharges}) (left here)`;
         }
       }
       addLog(`Found: ${item}`);
@@ -1265,7 +1462,13 @@ const App: React.FC = () => {
 
   const enterManor = (fromCave: boolean) => {
     addLog("You enter the Milord's Manor.");
-    updateState(s => ({ ...s, manorEnteredFromCave: fromCave, currentLocation: "Milord's Manor", inCave: false }));
+    updateState(s => ({
+      ...s,
+      manorEnteredFromCave: fromCave,
+      currentLocation: "Milord's Manor",
+      inCave: false,
+      locationVisitId: s.locationVisitId + 1
+    }));
     if (fromCave) {
       resolveManorRoom(6);
       return;
@@ -1660,7 +1863,7 @@ const App: React.FC = () => {
   };
 
   const enterCave = () => {
-    updateState(s => ({ ...s, inCave: true, currentLocation: "Cave" }));
+    updateState(s => ({ ...s, inCave: true, currentLocation: "Cave", locationVisitId: s.locationVisitId + 1 }));
     resolveCaveEncounter();
   };
 
@@ -1744,7 +1947,12 @@ const App: React.FC = () => {
           label: "Exit",
           action: () => {
             markVisited("Cave");
-            updateState(s => ({ ...s, inCave: false, currentLocation: "Mountain Pass" }));
+            updateState(s => ({
+              ...s,
+              inCave: false,
+              currentLocation: "Mountain Pass",
+              locationVisitId: s.locationVisitId + 1
+            }));
             resolveMountainPass(gameState!);
           }
         }]
@@ -1767,7 +1975,12 @@ const App: React.FC = () => {
               label: "Exit",
               action: () => {
                 markVisited("Cave");
-                updateState(s => ({ ...s, inCave: false, currentLocation: "Mountain Pass" }));
+                updateState(s => ({
+                  ...s,
+                  inCave: false,
+                  currentLocation: "Mountain Pass",
+                  locationVisitId: s.locationVisitId + 1
+                }));
                 resolveMountainPass(gameState!);
               }
             }]
@@ -1782,7 +1995,12 @@ const App: React.FC = () => {
             label: "Follow It",
             action: () => {
               markVisited("Cave");
-              updateState(s => ({ ...s, inCave: false, currentLocation: "Peak Black" }));
+              updateState(s => ({
+                ...s,
+                inCave: false,
+                currentLocation: "Peak Black",
+                locationVisitId: s.locationVisitId + 1
+              }));
               resolvePeakBlack();
             }
           }]
@@ -1909,6 +2127,7 @@ const App: React.FC = () => {
   }
 
   if (!gameState) return null;
+  const currentLocationItems = gameState.locationItems[gameState.currentLocation] || [];
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-stone-950">
@@ -1973,6 +2192,7 @@ const App: React.FC = () => {
                 {MAP_LOCATIONS.map((loc) => {
                   const status = getLocationStatus(loc);
                   const isCurrent = status === 'current';
+                  const hasItems = (gameState.locationItems[loc] || []).length > 0;
                   const baseClass = "p-2 border text-center map-tile";
                   const statusClass = status === 'visited'
                     ? "border-stone-500 bg-stone-800 text-stone-100"
@@ -1984,6 +2204,9 @@ const App: React.FC = () => {
                   return (
                     <div key={loc} className={`${baseClass} ${statusClass} ${isCurrent ? 'ring-2 ring-stone-300' : ''}`}>
                       {loc}
+                      {hasItems && (
+                        <div className="mt-1 text-[10px] uppercase tracking-widest text-amber-300">Items</div>
+                      )}
                     </div>
                   );
                 })}
@@ -2061,6 +2284,114 @@ const App: React.FC = () => {
                     USE DIVINATION SIGIL
                   </button>
                 )}
+            </div>
+
+            <div className="woodcut-border p-6 bg-stone-900 space-y-4">
+              <div>
+                <h3 className="text-2xl font-game mb-2">Items Here</h3>
+                {currentLocationItems.length ? (
+                  <div className="space-y-2">
+                    {currentLocationItems.map((item, index) => (
+                      <div key={`${describeLocationItem(item)}-${index}`} className="flex items-center justify-between border border-stone-800 px-3 py-2">
+                        <span className="text-stone-200">{describeLocationItem(item)}</span>
+                        <button
+                          disabled={isRolling}
+                          onClick={() => queueAction(() => attemptTakeLocationItem(index))}
+                          className="px-3 py-1 border border-stone-500 text-stone-100 font-game text-sm hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          TAKE
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-stone-500 italic">No items left here.</p>
+                )}
+              </div>
+              <div className="border-t border-stone-800 pt-4">
+                <h3 className="text-2xl font-game mb-2">Leave Items</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {gameState.inventory.weapon.name !== WeaponType.BARE_HANDS && (
+                    <button
+                      disabled={isRolling}
+                      onClick={() => queueAction(() => dropItemHere(
+                        { kind: 'weapon', weapon: gameState.inventory.weapon, storedAtVisitId: gameState.locationVisitId },
+                        `You left ${gameState.inventory.weapon.name} here.`,
+                        s => { s.inventory.weapon = WEAPONS[WeaponType.BARE_HANDS]; }
+                      ))}
+                      className="p-3 border border-stone-700 text-stone-200 font-game text-sm hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      DROP WEAPON ({gameState.inventory.weapon.name})
+                    </button>
+                  )}
+                  {gameState.inventory.potions > 0 && (
+                    <button
+                      disabled={isRolling}
+                      onClick={() => queueAction(() => dropItemHere(
+                        { kind: 'potion', storedAtVisitId: gameState.locationVisitId },
+                        "You left a herbal potion here.",
+                        s => { s.inventory.potions -= 1; }
+                      ))}
+                      className="p-3 border border-stone-700 text-stone-200 font-game text-sm hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      DROP POTION
+                    </button>
+                  )}
+                  {gameState.inventory.hasRope && (
+                    <button
+                      disabled={isRolling}
+                      onClick={() => queueAction(() => dropItemHere(
+                        { kind: 'rope', storedAtVisitId: gameState.locationVisitId },
+                        "You left a rope here.",
+                        s => { s.inventory.hasRope = false; }
+                      ))}
+                      className="p-3 border border-stone-700 text-stone-200 font-game text-sm hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      DROP ROPE
+                    </button>
+                  )}
+                  {gameState.inventory.hasKaftan && (
+                    <button
+                      disabled={isRolling}
+                      onClick={() => queueAction(() => dropItemHere(
+                        { kind: 'kaftan', storedAtVisitId: gameState.locationVisitId },
+                        "You left a leather kaftan here.",
+                        s => { s.inventory.hasKaftan = false; }
+                      ))}
+                      className="p-3 border border-stone-700 text-stone-200 font-game text-sm hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      DROP KAFTAN
+                    </button>
+                  )}
+                  {gameState.inventory.hasInvisibilityCap > 0 && (
+                    <button
+                      disabled={isRolling}
+                      onClick={() => queueAction(() => dropItemHere(
+                        { kind: 'invisibility-cap', charges: gameState.inventory.hasInvisibilityCap, storedAtVisitId: gameState.locationVisitId },
+                        "You left an invisibility cap here.",
+                        s => { s.inventory.hasInvisibilityCap = 0; }
+                      ))}
+                      className="p-3 border border-stone-700 text-stone-200 font-game text-sm hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      DROP INVISIBILITY CAP
+                    </button>
+                  )}
+                  {gameState.inventory.scrolls.map((scroll, index) => (
+                    <button
+                      key={`drop-scroll-${index}`}
+                      disabled={isRolling}
+                      onClick={() => queueAction(() => dropItemHere(
+                        { kind: 'scroll', scroll, storedAtVisitId: gameState.locationVisitId },
+                        `You left a ${scroll.type} scroll here.`,
+                        s => { s.inventory.scrolls.splice(index, 1); }
+                      ))}
+                      className="p-3 border border-stone-700 text-stone-200 font-game text-sm hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      DROP SCROLL ({scroll.type})
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             
             <div className="bg-stone-900 p-6 rounded border border-stone-800">
@@ -2168,12 +2499,12 @@ const App: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
                     { name: "Potion", price: 4, disabled: gameState.inventory.potions >= 10, action: () => updateState(s => ({ ...s, dutki: s.dutki - 4, inventory: { ...s.inventory, potions: Math.min(10, s.inventory.potions + 1) } })) },
-                    { name: "Knife", price: 6, action: () => updateState(s => ({ ...s, dutki: s.dutki - 6, inventory: { ...s.inventory, weapon: WEAPONS[WeaponType.KNIFE] } })) },
-                    { name: "Ciupaga", price: 9, action: () => updateState(s => ({ ...s, dutki: s.dutki - 9, inventory: { ...s.inventory, weapon: WEAPONS[WeaponType.CIUPAGA] } })) },
+                    { name: "Knife", price: 6, action: () => buyWeapon(WeaponType.KNIFE, 6) },
+                    { name: "Ciupaga", price: 9, action: () => buyWeapon(WeaponType.CIUPAGA, 9) },
                     { name: "Rope", price: 5, disabled: gameState.inventory.hasRope, action: () => updateState(s => ({ ...s, dutki: s.dutki - 5, inventory: { ...s.inventory, hasRope: true } })) },
-                    { name: "Sabre", price: 12, action: () => updateState(s => ({ ...s, dutki: s.dutki - 12, inventory: { ...s.inventory, weapon: WEAPONS[WeaponType.SABRE] } })) },
-                    { name: "Samopał", price: 15, action: () => updateState(s => ({ ...s, dutki: s.dutki - 15, inventory: { ...s.inventory, weapon: WEAPONS[WeaponType.SAMOPAL] } })) },
-                    { name: "Scattergun", price: 25, action: () => updateState(s => ({ ...s, dutki: s.dutki - 25, inventory: { ...s.inventory, weapon: WEAPONS[WeaponType.SCATTERGUN] } })) },
+                    { name: "Sabre", price: 12, action: () => buyWeapon(WeaponType.SABRE, 12) },
+                    { name: "Samopał", price: 15, action: () => buyWeapon(WeaponType.SAMOPAL, 15) },
+                    { name: "Scattergun", price: 25, action: () => buyWeapon(WeaponType.SCATTERGUN, 25) },
                     { name: "Kaftan", price: 10, disabled: gameState.inventory.hasKaftan, action: () => updateState(s => ({ ...s, dutki: s.dutki - 10, inventory: { ...s.inventory, hasKaftan: true } })) },
                     ...(shopMode === 'merchant' ? [{ name: "Scroll", price: 7, action: () => { updateState(s => ({ ...s, dutki: s.dutki - 7 })); findRandomScroll(); } }] : []),
                 ].map((item, i) => (

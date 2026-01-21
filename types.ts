@@ -30,6 +30,14 @@ export interface Scroll {
   description: string;
 }
 
+export type DroppedItem =
+  | { kind: 'weapon'; weapon: Weapon; storedAtVisitId: number }
+  | { kind: 'potion'; storedAtVisitId: number }
+  | { kind: 'scroll'; scroll: Scroll; storedAtVisitId: number }
+  | { kind: 'rope'; storedAtVisitId: number }
+  | { kind: 'kaftan'; storedAtVisitId: number }
+  | { kind: 'invisibility-cap'; charges: number; storedAtVisitId: number };
+
 export interface GameState {
   playerName: string;
   hp: number;
@@ -68,6 +76,8 @@ export interface GameState {
     hardy?: string;
   };
   currentLocation: string;
+  locationVisitId: number;
+  locationItems: Record<string, DroppedItem[]>;
   inCave: boolean;
   caveHiddenPassageSeen: boolean;
   isDead: boolean;
