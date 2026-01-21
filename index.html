@@ -6,25 +6,104 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Corny Groń: Peak Black</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;700&family=Pirata+One&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;700&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --map-paper: #f2e6c8;
+            --map-panel: #f8f1dc;
+            --map-wash: #e8d9ba;
+            --map-ink: #2c271f;
+            --map-muted: #6f6555;
+            --map-line: #b7a27a;
+            --map-line-strong: #6e5f49;
+            --map-accent: #a96534;
+            --map-sea: #9fb7a9;
+            --map-danger: #9a4436;
+        }
         body {
-            background-color: #0c0a09;
-            color: #e7e5e4;
+            background-color: var(--map-paper);
+            color: var(--map-ink);
             font-family: 'Crimson Pro', serif;
+            background-image:
+                radial-gradient(1200px 500px at 10% 0%, rgba(255, 255, 255, 0.6), transparent 70%),
+                repeating-linear-gradient(0deg, rgba(114, 100, 76, 0.12) 0 1px, transparent 1px 56px),
+                repeating-linear-gradient(90deg, rgba(114, 100, 76, 0.1) 0 1px, transparent 1px 72px),
+                repeating-linear-gradient(35deg, rgba(64, 56, 45, 0.08) 0 1px, transparent 1px 24px);
+            background-attachment: fixed;
+        }
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background-image: radial-gradient(circle at 20% 20%, rgba(0, 0, 0, 0.08), transparent 40%),
+                radial-gradient(circle at 80% 70%, rgba(0, 0, 0, 0.06), transparent 45%);
+            opacity: 0.35;
+            pointer-events: none;
         }
         .font-game {
-            font-family: 'Pirata One', cursive;
+            font-family: 'IM Fell English SC', serif;
+            letter-spacing: 0.02em;
         }
         .woodcut-border {
-            border: 4px solid #e7e5e4;
-            box-shadow: 0 0 0 2px #0c0a09, 0 0 0 4px #e7e5e4;
+            border: 2px solid var(--map-ink);
+            box-shadow:
+                inset 0 0 0 2px var(--map-panel),
+                inset 0 0 0 4px var(--map-line),
+                0 10px 24px rgba(44, 39, 31, 0.18);
         }
+        .map-tile {
+            background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.4), transparent 45%);
+        }
+        .map-ink {
+            color: var(--map-ink);
+        }
+        .map-accent {
+            color: var(--map-accent);
+        }
+        .map-danger {
+            color: var(--map-danger);
+        }
+        .bg-stone-950 { background-color: var(--map-paper) !important; }
+        .bg-stone-900 {
+            background-color: var(--map-panel) !important;
+            background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 65%),
+                repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.03) 0 1px, transparent 1px 8px);
+        }
+        .bg-stone-800 {
+            background-color: var(--map-wash) !important;
+            background-image: repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.03) 0 1px, transparent 1px 10px);
+        }
+        .bg-stone-700 { background-color: #dccaa8 !important; }
+        .bg-stone-600 { background-color: #c9b08b !important; }
+        .bg-stone-300 { background-color: #e2d2b3 !important; }
+        .bg-stone-200 { background-color: #eee2c8 !important; }
+        .bg-stone-100 { background-color: var(--map-ink) !important; }
+        .bg-white { background-color: #fdf7e8 !important; }
+        .text-stone-950 { color: var(--map-paper) !important; }
+        .text-stone-100 { color: var(--map-ink) !important; }
+        .text-stone-200 { color: #3e392f !important; }
+        .text-stone-300 { color: #584f41 !important; }
+        .text-stone-400 { color: var(--map-muted) !important; }
+        .text-stone-500 { color: #655a48 !important; }
+        .text-stone-600 { color: #544b3c !important; }
+        .border-stone-100 { border-color: var(--map-ink) !important; }
+        .border-stone-500 { border-color: var(--map-line-strong) !important; }
+        .border-stone-800 { border-color: var(--map-line) !important; }
+        .border-stone-900 { border-color: #d1c2a2 !important; }
+        .ring-stone-300 { --tw-ring-color: var(--map-ink) !important; }
+        .text-red-500 { color: var(--map-danger) !important; }
+        .text-red-900 { color: #5f2a23 !important; }
+        .bg-red-500 { background-color: var(--map-danger) !important; }
+        .bg-red-900 { background-color: #5e2a22 !important; }
+        .bg-red-950 { background-color: #3b1a15 !important; }
+        .border-red-900 { border-color: #6e332c !important; }
+        .text-yellow-400 { color: var(--map-accent) !important; }
+        .border-yellow-700 { border-color: #8b5a2b !important; }
         /* Custom scrollbar */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #1c1917; }
-        ::-webkit-scrollbar-thumb { background: #44403c; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #57534e; }
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: #e4d7bb; }
+        ::-webkit-scrollbar-thumb { background: #8c7a5e; border-radius: 6px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6f6048; }
     </style>
 <script type="importmap">
 {

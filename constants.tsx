@@ -1,5 +1,5 @@
 
-import { WeaponType, Weapon, ScrollType } from './types';
+import { WeaponType, Weapon, ScrollType } from './types.js';
 
 export const WEAPONS: Record<WeaponType, Weapon> = {
   [WeaponType.KNIFE]: { name: WeaponType.KNIFE, damageDie: 4, bonusDamage: 0, hitBonus: 0, price: 6 },

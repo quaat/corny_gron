@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "rewriteRelativeImportExtensions": true,
+    "outDir": "../tmp/harness",
+    "rootDir": "..",
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": ["../scripts/harness.ts", "../constants.tsx", "../rules.ts", "../types.ts"]
+}

@@ -38,6 +38,18 @@ export interface GameState {
   points: number;
   visitedPlacesCount: number;
   visitedTypes: Set<string>;
+  escapedTypes: Set<string>;
+  locationRollModifier: number;
+  hutRestCooldown: number;
+  villageRestCooldown: number;
+  springRestCooldown: number;
+  manorRoomsVisited: Set<number>;
+  manorEnteredFromCave: boolean;
+  milordDefeated: boolean;
+  milordHunts: boolean;
+  milordTrueNameKnown: boolean;
+  nextFightHitMod: number;
+  temporaryHitPenalty: number;
   inventory: {
     weapon: Weapon;
     potions: number;
@@ -51,8 +63,13 @@ export interface GameState {
   advancements: number[]; // indices of Advancements already taken
   activeBiesTurns: number;
   permanentHitBonus: number;
-  halfDamageEnemies: string[]; // "scanty", "hardy"
+  halfDamageEnemies: {
+    scanty?: string;
+    hardy?: string;
+  };
   currentLocation: string;
+  inCave: boolean;
+  caveHiddenPassageSeen: boolean;
   isDead: boolean;
   hasWon: boolean;
   log: string[];
