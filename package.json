@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "lint": "tsc --noEmit",
+    "test": "tsc -p tests/tsconfig.tests.json && node --test ./tmp/tests/tests/*.test.js",
+    "test:coverage": "tsc -p tests/tsconfig.tests.json && mkdir -p coverage && /bin/bash -lc 'set -o pipefail; NODE_V8_COVERAGE=coverage/v8 node --test --experimental-test-coverage ./tmp/tests/tests/*.test.js | tee coverage/summary.txt'",
     "build": "vite build",
     "preview": "vite preview",
     "harness": "tsc -p scripts/tsconfig.harness.json && node ./tmp/harness/scripts/harness.js"
